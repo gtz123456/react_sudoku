@@ -1,113 +1,284 @@
-import Image from "next/image";
+'use client'
+
+import { useState } from 'react';
+
+function Cell({ value, updateCell, getCandidates, generated }) {
+  // display the value in a cell if value is not null, otherwise display Candidate component
+
+  return (
+    <div className={`w-20 h-20 text-2xl border border-gray-300 flex items-center justify-center ${!generated && 'bg-emerald-50'}`} onClick={() => {if(value&&!generated) updateCell(null)}}>
+      {value ? value : <Candidate candidates={getCandidates()} updateCell={updateCell} />}
+    </div>
+  );
+}
+
+function Candidate({ candidates, updateCell }) {
+  // display the possible values in a cell
+  // display numbers 1-9 in a 3x3 grid, and hide the numbers that are already in the row, column, or 3x3 grid
+
+  return (
+    <div className="grid grid-cols-3 grid-rows-3 gap-1 text-lg">
+      {candidates.map((candidate, index) => (
+        <div key={index} className={`w-5 h-5 border border-gray-300 flex items-center justify-center ${candidate ? 'text-black' : 'text-gray-300'} hover:bg-green-100`} onClick={() => updateCell(index+1)}>
+          {index + 1}
+        </div>
+      ))}
+    </div>
+  );
+
+}
+
+function Board() {
+  // The board is a 9x9 grid for a sudoku puzzle
+  
+  const [board, setBoard] = useState(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null)));
+  const [conflict, setConflict] = useState(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => false)));
+
+  const [generated, setGenerated] = useState(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => false)));
+
+  const [vacant, setVacant] = useState(30);
+
+  function generateBoard() {
+    // Generate a new board
+    
+    // Ramdomly fill the 1, 5, 9 blocks, and try to solve the board.
+    // If the board is not solvable, reset the board and try again.
+    // If the board is solvable, remove some numbers to create a puzzle.
+
+    // generate a shuffled array to initialize the 1, 5, 9 blocks
+    function getShuffledArray() {
+      let arr = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+      for (let i = arr.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    // fill the 1, 5, 9 blocks
+    function fillblocks() {
+      let block1 = getShuffledArray();
+      let block5 = getShuffledArray();
+      let block9 = getShuffledArray();
+  
+      let newBoard = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null));
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          newBoard[i][j] = block1[i*3+j];
+          newBoard[i+3][j+3] = block5[i*3+j];
+          newBoard[i+6][j+6] = block9[i*3+j];
+        }
+      }  
+      return newBoard;
+      
+    }
+
+    let newBoard;
+
+    while (true) {
+      newBoard = fillblocks();
+      console.log("try to generate board");
+      if (solveBoard(newBoard)) {
+        break;
+      }
+    }
+
+    // Remove some numbers to create a puzzle
+    // Doesn't guarantee a unique solution
+
+    const remove = Array(vacant).fill(true).concat(Array(81 - vacant).fill(false));
+
+    for (let i = remove.length - 1; i > 0; i--) {
+      const randomIndex = Math.floor(Math.random() * (i + 1));
+      [remove[i], remove[randomIndex]] = [remove[randomIndex], remove[i]];
+    }
+
+    setBoard(newBoard.map((row, rowIndex) => (
+      row.map((value, colIndex) => (
+        remove[rowIndex*9+colIndex] ? null : value
+      ))
+    )));
+
+    setGenerated(newBoard.map((row, rowIndex) => (
+      row.map((value, colIndex) => (
+        remove[rowIndex*9+colIndex] ? false : true
+      ))
+    )));
+  }
+
+  function updateCell(row, col) {
+    // Update the current board with the new value
+    return function(newValue) {
+      const newBoard = board.map((r, rowIndex) => (
+        r.map((v, colIndex) => (
+          rowIndex === row && colIndex === col ? newValue : v
+        ))
+      ));
+      setBoard(newBoard);
+    }
+  }
+
+  function clearBoard() {
+    // Clear the current board
+    setBoard(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null)));
+  }
+
+  function saveBoard() {
+    // Save the current board to local storage
+    localStorage.setItem('board', JSON.stringify(board));
+  }
+
+  function loadBoard() {
+    // Load the board from local storage
+    const savedBoard = JSON.parse(localStorage.getItem('board'));
+    if (savedBoard) {
+      setBoard(savedBoard);
+    }
+  }
+
+  function checkBoard() {
+    // Check the current board and mark conflict cells
+    // If the puzzle is solved, display a success message
+
+    let conflict = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => false));
+
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 9; j++) {
+        if (board[i][j]) {
+          let value = board[i][j];
+          for (let k = 0; k < 9; k++) {
+            if (board[i][k] === value && k !== j) {
+              conflict[i][k] = true;
+              conflict[i][j] = true;
+            }
+            if (board[k][j] === value && k !== i) {
+              conflict[k][j] = true;
+              conflict[i][j] = true;
+            }
+          }
+
+          let r = i - i % 3;
+          let c = j - j % 3;
+          for (let k = r; k < r + 3; k++) {
+            for (let l = c; l < c + 3; l++) {
+              if (board[k][l] === value && k !== i && l !== j) {
+                conflict[k][l] = true;
+                conflict[i][j] = true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    setConflict(conflict);
+
+    let solved = true;
+  }
+
+  function solveBoard(newBoard) {
+    // Solve the board using backtracking algorithm
+
+    function solve() {
+      for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+          if (newBoard[i][j] === null) {
+            for (let value = 1; value <= 9; value++) {
+              newBoard[i][j] = value;
+              if (isValid(i, j) && solve()) {
+                return true;
+              }
+              newBoard[i][j] = null;
+            }
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function isValid(row, col) {
+      let value = newBoard[row][col];
+
+      for (let i = 0; i < 9; i++) {
+        if (newBoard[row][i] === value && i !== col) {
+          return false;
+        }
+        if (newBoard[i][col] === value && i !== row) {
+          return false;
+        }
+      }
+
+      let r = row - row % 3;
+      let c = col - col % 3;
+      for (let i = r; i < r + 3; i++) {
+        for (let j = c; j < c + 3; j++) {
+          if (newBoard[i][j] === value && i !== row && j !== col) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    return solve();
+
+  }
+
+  function getCandidates(row, col) {
+    // get the possible values for the cell
+    return function() {
+      let res = [true, true, true, true, true, true, true, true, true];
+
+      // check the row, column
+      for (let i = 0; i < 9; i++) {
+        if (board[row][i]) {
+          res[board[row][i] - 1] = false;
+        }
+        if (board[i][col]) {
+          res[board[i][col] - 1] = false;
+        }
+      }
+
+      // check the 3x3 grid
+      let r = row - row % 3;
+      let c = col - col % 3;
+      for (let i = r; i < r + 3; i++) {
+        for (let j = c; j < c + 3; j++) {
+          if (board[i][j]) {
+            res[board[i][j] - 1] = false;
+          }
+        }
+      }
+
+      return res;
+    }
+
+  }
+
+  // Display the board as a 9x9 grid of cells
+  return (
+    <>
+      <div className="grid grid-cols-9 grid-rows-9 gap-1">
+        {board.map((row, rowIndex) => (
+          row.map((value, colIndex) => (
+            <Cell key={rowIndex*9+colIndex} value={value} updateCell={updateCell(rowIndex,colIndex)} getCandidates={getCandidates(rowIndex,colIndex)} generated={generated[rowIndex][colIndex]} />
+          ))
+        ))}
+      </div>
+      <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={generateBoard}>Generate</button>
+    </>
+  );
+
+
+}
 
 export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+      <h1 className="text-4xl font-bold text-center">Sudoku</h1>
+      <Board />
     </main>
   );
 }
