@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-import Timer from '../components/Timer';
+import Timer from '../components/timer.js';
 
 function Cell({ value, updateCell, getCandidates, generated, conflict }) {
   // display the value in a cell if value is not null, otherwise display Candidate component
