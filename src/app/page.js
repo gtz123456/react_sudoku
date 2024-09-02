@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-function Cell({ value, updateCell, getCandidates, generated }) {
+import Timer from '../components/Timer';
+
+function Cell({ value, updateCell, getCandidates, generated, conflict }) {
   // display the value in a cell if value is not null, otherwise display Candidate component
 
   return (
-    <div className={`w-20 h-20 text-2xl border border-gray-300 flex items-center justify-center ${!generated && 'bg-emerald-50'}`} onClick={() => {if(value&&!generated) updateCell(null)}}>
+    <div className={`w-20 h-20 text-2xl border border-gray-300 flex items-center justify-center ${!generated && 'bg-emerald-50'} ${!generated && conflict && 'text-red-600'}`} onClick={() => {if(value&&!generated) updateCell(null)}}>
       {value ? value : <Candidate candidates={getCandidates()} updateCell={updateCell} />}
     </div>
   );
@@ -28,7 +30,7 @@ function Candidate({ candidates, updateCell }) {
 
 }
 
-function Board() {
+function Board() {  
   // The board is a 9x9 grid for a sudoku puzzle
   
   const [board, setBoard] = useState(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null)));
@@ -36,7 +38,25 @@ function Board() {
 
   const [generated, setGenerated] = useState(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => false)));
 
+  const [steps, setSteps] = useState([]); // Record user's steps so that we can undo the steps
+
   const [vacant, setVacant] = useState(30);
+
+  const timerRef = useRef(null);
+
+  function undo() {
+    // Undo the last step
+    if (steps.length > 0) {
+      let newsteps = [...steps];
+      let [row, col] = newsteps.pop();
+      setSteps(newsteps);
+
+      const newBoard = board.map(row => row.slice());
+      newBoard[row][col] = null;
+      setBoard(newBoard);
+      checkBoard(newBoard);
+    }
+  }
 
   function generateBoard() {
     // Generate a new board
@@ -46,6 +66,7 @@ function Board() {
     // If the board is solvable, remove some numbers to create a puzzle.
 
     // generate a shuffled array to initialize the 1, 5, 9 blocks
+
     function getShuffledArray() {
       let arr = [1, 2, 3, 4, 5, 6, 7, 8, 9];
       for (let i = arr.length - 1; i > 0; i--) {
@@ -55,38 +76,44 @@ function Board() {
       return arr;
     }
 
-    // fill the 1, 5, 9 blocks
-    function fillblocks() {
+    let newBoard;
+
+    while (true) {
+      newBoard = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null));
+
+      // Fill the 1, 5, 9 blocks
       let block1 = getShuffledArray();
       let block5 = getShuffledArray();
       let block9 = getShuffledArray();
   
-      let newBoard = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null));
       for (let i = 0; i < 3; i++) {
         for (let j = 0; j < 3; j++) {
           newBoard[i][j] = block1[i*3+j];
           newBoard[i+3][j+3] = block5[i*3+j];
           newBoard[i+6][j+6] = block9[i*3+j];
         }
-      }  
-      return newBoard;
+      }   
+
+      let solvedBoard = solveBoard(newBoard);
       
-    }
-
-    let newBoard;
-
-    while (true) {
-      newBoard = fillblocks();
-      console.log("try to generate board");
-      if (solveBoard(newBoard)) {
+      if (solveBoard) {
+        newBoard = solvedBoard;
         break;
       }
     }
 
     // Remove some numbers to create a puzzle
     // Doesn't guarantee a unique solution
+    console.log(timerRef);
+    if (timerRef.current) {
+      console.log('reset timer');
+      
+      timerRef.current.resetTimer();  // Reset the timer
+      timerRef.current.startTimer();  // Start the timer
+    }
 
-    const remove = Array(vacant).fill(true).concat(Array(81 - vacant).fill(false));
+    console.log(vacant, 81 - vacant);
+    let remove = [...Array(81).keys()].map((i) => i < vacant); // Array(vacant).fill(true).concat(Array(81 - vacant).fill(false));
 
     for (let i = remove.length - 1; i > 0; i--) {
       const randomIndex = Math.floor(Math.random() * (i + 1));
@@ -100,43 +127,46 @@ function Board() {
     )));
 
     setGenerated(newBoard.map((row, rowIndex) => (
-      row.map((value, colIndex) => (
-        remove[rowIndex*9+colIndex] ? false : true
-      ))
+      row.map((value, colIndex) => (!remove[rowIndex*9+colIndex]))
     )));
+
+    setSteps([]);
   }
 
   function updateCell(row, col) {
     // Update the current board with the new value
     return function(newValue) {
-      const newBoard = board.map((r, rowIndex) => (
-        r.map((v, colIndex) => (
-          rowIndex === row && colIndex === col ? newValue : v
-        ))
-      ));
+      const newBoard = board.map(row => row.slice());
+      newBoard[row][col] = newValue;
       setBoard(newBoard);
+      checkBoard(newBoard);
+      setSteps([...steps, [row, col]]);
     }
   }
 
   function clearBoard() {
     // Clear the current board
     setBoard(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => null)));
+    setGenerated(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => false)));
   }
 
   function saveBoard() {
     // Save the current board to local storage
     localStorage.setItem('board', JSON.stringify(board));
+    localStorage.setItem('generated', JSON.stringify(generated));
   }
 
   function loadBoard() {
     // Load the board from local storage
     const savedBoard = JSON.parse(localStorage.getItem('board'));
+    const savedGenerated = JSON.parse(localStorage.getItem('generated'));
     if (savedBoard) {
       setBoard(savedBoard);
+      setGenerated(savedGenerated);
     }
   }
 
-  function checkBoard() {
+  function checkBoard(board) {
     // Check the current board and mark conflict cells
     // If the puzzle is solved, display a success message
 
@@ -174,10 +204,26 @@ function Board() {
     setConflict(conflict);
 
     let solved = true;
+
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 9; j++) {
+        if (!board[i][j] || conflict[i][j]) {
+          solved = false;
+        }
+      }
+    }
+
+    if (solved) {
+      if (timerRef.current) {
+        timerRef.current.stopTimer();
+      }
+      alert('Congratulations! You have solved the puzzle!');
+    }
   }
 
-  function solveBoard(newBoard) {
+  function solveBoard(board) {
     // Solve the board using backtracking algorithm
+    let newBoard = board.map(row => row.slice());
 
     function solve() {
       for (let i = 0; i < 9; i++) {
@@ -222,8 +268,16 @@ function Board() {
       return true;
     }
 
-    return solve();
+    return solve() ? newBoard : null;
 
+  }
+
+  function solve() {
+    // Solve the current board
+    let newBoard = solveBoard(board);
+    if (newBoard) {
+      setBoard(newBoard);
+    }
   }
 
   function getCandidates(row, col) {
@@ -260,14 +314,31 @@ function Board() {
   // Display the board as a 9x9 grid of cells
   return (
     <>
-      <div className="grid grid-cols-9 grid-rows-9 gap-1">
+      <Timer ref={timerRef} />
+      <div className={'grid grid-cols-9 grid-rows-9 gap-1'}>
         {board.map((row, rowIndex) => (
           row.map((value, colIndex) => (
-            <Cell key={rowIndex*9+colIndex} value={value} updateCell={updateCell(rowIndex,colIndex)} getCandidates={getCandidates(rowIndex,colIndex)} generated={generated[rowIndex][colIndex]} />
+            <Cell key={rowIndex*9+colIndex} value={value} updateCell={updateCell(rowIndex,colIndex)} getCandidates={getCandidates(rowIndex,colIndex)} generated={generated[rowIndex][colIndex]} conflict={conflict[rowIndex][colIndex]}/>
           ))
         ))}
       </div>
-      <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={generateBoard}>Generate</button>
+      <div className={'flex space-x-4'}>
+        <button className="w-32 h-12 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={generateBoard}>Generate</button>
+        <button className="w-32 h-12 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={clearBoard}>Clear</button>
+        <button className="w-32 h-12 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={saveBoard}>Save</button>
+        <button className="w-32 h-12 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={loadBoard}>Load</button>
+        <button className="w-32 h-12 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={solve}>Solve</button>
+        <button className="w-32 h-12 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onClick={undo}>Undo</button>
+      </div>
+
+      <div className={'flex flex-col items-center'}>
+        <div> Settings </div>
+        <div className={'flex space-x-4 items-center'}>
+          <p className='w-16'> Vacant </p>
+          <input className='w-16 text-center border rounded border-emerald-200' type="number" value={vacant} onChange={(e) => setVacant(e.target.value)} />
+        </div>
+        
+      </div>
     </>
   );
 
