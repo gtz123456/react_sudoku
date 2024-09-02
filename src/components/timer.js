@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 
-// 使用 React.forwardRef 来包裹 Timer 组件
 const Timer = forwardRef((props, ref) => {
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
@@ -48,5 +47,7 @@ const Timer = forwardRef((props, ref) => {
     </div>
   );
 });
+
+Timer.displayName = "Timer";
 
 export default Timer;
